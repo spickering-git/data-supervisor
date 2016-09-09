@@ -11,12 +11,22 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using System.Net;
 using System.Net.Sockets;
+using System.Configuration;
+using DataCollectionForRealtime.Model;
+using CQG;
+
+using FakeCQG;
+using FakeCQG.Helpers;
+using FakeCQG.Models;
 
 namespace DataCollectionForRealtime
 {
     public partial class RealtimeDataManagement : Form
     {
+
         private CQGDataManagement cqgDataManagement;
+
+        private QueryHandler queryHandler;
 
         public RealtimeDataManagement()
         {
@@ -24,68 +34,9 @@ namespace DataCollectionForRealtime
 
             cqgDataManagement = new CQGDataManagement(this);
 
-            MongoDBConnectionAndSetup mongoDBConnectionAndSetup = new MongoDBConnectionAndSetup();
-            //mongoDBConnectionAndSetup.connectToMongoDB();
-            //mongoDBConnectionAndSetup.createDocument();
-            //mongoDBConnectionAndSetup.dropCollection();
-
-            var contextTMLDB = new DataClassesTMLDBDataContext(
-                System.Configuration.ConfigurationManager.ConnectionStrings["TMLDBConnectionString"].ConnectionString);
-            TMLDBReader TMLDBReader = new TMLDBReader(contextTMLDB);
-
-            
-
-            bool gotInstrumentList = TMLDBReader.GetTblInstruments(ref cqgDataManagement.instrumentHashTable,
-                    ref cqgDataManagement.instrumentList);
-
-            Console.WriteLine(cqgDataManagement.instrumentList[0].description);
+            queryHandler = new QueryHandler(cqgDataManagement);
 
             AsyncTaskListener.Updated += AsyncTaskListener_Updated;
-
-            testLoadIn();
-
-            testGetData();
-
-            //mongoDBConnectionAndSetup.createDoc();
-            //mongoDBConnectionAndSetup.getDocument();
-        }
-
-        private void testLoadIn()
-        {
-            MongoDBConnectionAndSetup mongoDBConnectionAndSetup = new MongoDBConnectionAndSetup();
-
-            Mongo_OptionSpreadExpression osefdb = new Mongo_OptionSpreadExpression();
-
-            
-            osefdb.cqgSymbol = "F.EPU16";
-            osefdb.instrument = cqgDataManagement.instrumentHashTable[11];
-
-            //mongoDBConnectionAndSetup.MongoDataCollection.ReplaceOne(
-            //    item => item.cqgSymbol == osefdb.cqgSymbol,
-            //    osefdb,
-            //    new UpdateOptions { IsUpsert = true });
-
-            mongoDBConnectionAndSetup.MongoDataCollection.InsertOne(osefdb);
-
-
-        }
-
-        private void testGetData()
-        {
-            MongoDBConnectionAndSetup mongoDBConnectionAndSetup = new MongoDBConnectionAndSetup();
-
-            var filterBuilder = Builders<Mongo_OptionSpreadExpression>.Filter;
-            var filter = filterBuilder.Ne("Id", "barf");
-
-            var testExpression = mongoDBConnectionAndSetup.MongoDataCollection.Find(filter).SingleOrDefault();
-
-            Console.WriteLine(testExpression.cqgSymbol);
-
-
-        }
-
-        private void btnCallAllInstruments_Click(object sender, EventArgs e)
-        {
 
         }
 
@@ -152,48 +103,7 @@ namespace DataCollectionForRealtime
             }
         }
 
-        /// <summary>
-        /// Set up the realtime price fill type
-        /// </summary>
-        private void optionPriceFillTypeChanged()
-        {
-            if(radioBtnDefaultPriceRules.Checked)
-            {
-                cqgDataManagement.realtimePriceFillType = REALTIME_PRICE_FILL_TYPE.PRICE_DEFAULT;
-            }
-            else if (radioBtnMidPriceRules.Checked)
-            {
-                cqgDataManagement.realtimePriceFillType = REALTIME_PRICE_FILL_TYPE.PRICE_MID_BID_ASK;
-            }
-            else if (radioBtnTheorPriceRules.Checked)
-            {
-                cqgDataManagement.realtimePriceFillType = REALTIME_PRICE_FILL_TYPE.PRICE_THEORETICAL;
-            }
-            else if (radioBtnAskPriceRules.Checked)
-            {
-                cqgDataManagement.realtimePriceFillType = REALTIME_PRICE_FILL_TYPE.PRICE_ASK;
-            }
-            else if (radioBtnBidPriceRules.Checked)
-            {
-                cqgDataManagement.realtimePriceFillType = REALTIME_PRICE_FILL_TYPE.PRICE_BID;
-            }
-
-            //realtimeMonitorSettings.realtimePriceFillType = realtimePriceFillType;
-
-            //optionSpreadManager.updatedRealtimeMonitorSettingsThreadRun();
-
-            //optionRealtimeMonitor.updateStatusStripOptionMonitor();
-        }
-
-        private void radioBtnDefaultPriceRules_CheckedChanged(object sender, EventArgs e)
-        {
-            optionPriceFillTypeChanged();
-        }
-        
-        private void AsyncTaskListener_Updated(
-    string message = null,
-    int progress = -1,
-    double rps = double.NaN)
+        private void AsyncTaskListener_Updated(string message = null)
         {
             Action action = new Action(
                 () =>
@@ -204,14 +114,6 @@ namespace DataCollectionForRealtime
                         richTextBoxLog.Select(richTextBoxLog.Text.Length, richTextBoxLog.Text.Length);
                         richTextBoxLog.ScrollToCaret();
                     }
-                    //if (progress != -1)
-                    //{
-                    //    progressBar.Value = progress;
-                    //}
-                    //if (!double.IsNaN(rps))
-                    //{
-                    //    labelRPS2.Text = Math.Round(rps).ToString();
-                    //}
                 });
 
             try
@@ -222,6 +124,33 @@ namespace DataCollectionForRealtime
             {
                 // User closed the form
             }
+        }
+
+        private void buttonCheck_Click(object sender, EventArgs e)
+        {
+            queryHandler.CheckRequestsQueue();
+        }
+
+        private void buttonFill_Click(object sender, EventArgs e)
+        {
+            //TODO: Before filling we must:
+            // - collect queries                           TODO: Create collector for combine query
+            // - get data from CQG by combined qeury
+            // - divide answer for smoler answer by Key    TODO: Create answer divider 
+            // - fill osems smoler answer's by Key 
+            queryHandler.ProcessEntireQueryList();
+        }     
+
+        private void RealtimeDataManagement_Load(object sender, EventArgs e)
+        {
+            FakeCQG.CQG.ClearQueriesListAsync();
+            FakeCQG.CQG.LogChange += CQG_LogChange;
+            FakeCQG.CQG.GetQueries += queryHandler.SetQueryList;
+        }
+
+        private void CQG_LogChange(string message)
+        {
+            AsyncTaskListener.LogMessage(message);
         }
 
     }
